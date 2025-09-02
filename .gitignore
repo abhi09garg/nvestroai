@@ -1,0 +1,16 @@
+# Node.js
+node_modules/
+npm-debug.log
+.env
+
+# Build
+dist/
+build/
+
+# Python (future ML service)
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
