@@ -4,17 +4,44 @@ import { generateRecommendation } from "../services/advisorService.js";
 
 const router = express.Router();
 
-// POST /api/advisor   body: { age, income, riskTolerance, investmentHorizon, preferences }
+// Health-check endpoint
+router.get("/ping", (req, res) => {
+  res.json({ status: "advisor alive" });
+});
+
+// POST /api/advisor
+// body: { age, income, riskTolerance, investmentHorizon?, preferences? }
 router.post("/", async (req, res) => {
   try {
-    const profile = req.body || {};
+    const { age, income, riskTolerance, investmentHorizon, preferences } = req.body || {};
+
     // Basic validation
-    if (!profile.age || !profile.income || !profile.riskTolerance) {
-      return res.status(400).json({ error: "Missing required fields: age, income, riskTolerance" });
+    if (!age || !income || !riskTolerance) {
+      return res.status(400).json({
+        error: "Missing required fields: age, income, riskTolerance",
+      });
     }
 
+    // Apply defaults for optional fields
+    const profile = {
+      age,
+      income,
+      riskTolerance,
+      investmentHorizon: investmentHorizon || "medium", // default horizon
+      preferences: preferences || [], // default to empty list
+    };
+
     const result = await generateRecommendation(profile);
-    return res.json(result);
+
+    // Ensure explanation always exists
+    const safeResult = {
+      ...result,
+      explanation:
+        result.explanation ||
+        "Based on available data, we suggest a balanced allocation strategy.",
+    };
+
+    return res.json(safeResult);
   } catch (err) {
     console.error("Advisor endpoint error:", err);
     return res.status(500).json({ error: "Internal server error" });

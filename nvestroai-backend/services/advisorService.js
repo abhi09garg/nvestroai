@@ -245,40 +245,80 @@ export async function generateRecommendation(profile) {
   };
 
   // 3) For each ticker: fetch quote + history + compute scores
-  const sectorScores = {};    // map sector -> numeric 0..100 (average of tickers)
-  const sectorDetails = {};   // store raw details per ticker
-  for (const [sector, tickers] of Object.entries(sectorTickers)) {
+  const sectorScores = {};    // overall sector scores
+  const sectorDetails = {};   // detailed ticker scores
+
+for (const [assetClass, sectorsOrTickers] of Object.entries(sectorTickers)) {
+  sectorScores[assetClass] = {};
+  sectorDetails[assetClass] = {};
+
+  if (assetClass === "stocks") {
+    // Loop per sector
+    for (const [sector, tickers] of Object.entries(sectorsOrTickers)) {
+      const perTickerScores = [];
+      sectorDetails[assetClass][sector] = [];
+
+      for (const t of tickers) {
+        let quote = null;
+        let history = [];
+        try {
+          quote = await fetchStockQuote(t);
+          history = (await fetchHistory(t, 365)).map(h => h.close).filter(x => typeof x === "number");
+        } catch {}
+        
+        const valuation = computeValuationScore(quote);
+        const momentum = computeMomentumScore(history);
+        const risk = computeRiskScore(quote, history);
+        const headlines = await fetchNewsHeadlines(t, 4);
+        const sentiment = await gptSentimentScore(headlines);
+        const confidence = weightedConfidence(valuation, momentum, risk, sentiment);
+
+        perTickerScores.push(confidence);
+        sectorDetails[assetClass][sector].push({
+          ticker: t,
+          quote: { price: quote?.regularMarketPrice, pe: quote?.trailingPE, marketCap: quote?.marketCap },
+          valuation, momentum, risk, sentiment, confidence
+        });
+      }
+
+      // Average confidence per sector
+      sectorScores[assetClass][sector] = perTickerScores.length
+        ? Math.round(perTickerScores.reduce((a, b) => a + b, 0) / perTickerScores.length)
+        : 50;
+    }
+  } else {
+    // bonds / crypto
+    const tickers = sectorsOrTickers;
     const perTickerScores = [];
-    sectorDetails[sector] = [];
+    sectorDetails[assetClass] = [];
     for (const t of tickers) {
       let quote = null;
       let history = [];
       try {
         quote = await fetchStockQuote(t);
         history = (await fetchHistory(t, 365)).map(h => h.close).filter(x => typeof x === "number");
-      } catch (err) {
-        // swallow and continue
-      }
+      } catch {}
 
       const valuation = computeValuationScore(quote);
       const momentum = computeMomentumScore(history);
       const risk = computeRiskScore(quote, history);
-
-      // fetch news headlines for the ticker - keep low size to control cost
       const headlines = await fetchNewsHeadlines(t, 4);
       const sentiment = await gptSentimentScore(headlines);
+      const confidence = weightedConfidence(valuation, momentum, risk, sentiment);
 
-      const confidence = weightedConfidence(valuation, momentum, risk, sentiment); // 0..100
       perTickerScores.push(confidence);
-
-      sectorDetails[sector].push({
-        ticker: t, quote: { price: quote?.regularMarketPrice, pe: quote?.trailingPE, marketCap: quote?.marketCap },
+      sectorDetails[assetClass].push({
+        ticker: t,
+        quote: { price: quote?.regularMarketPrice, pe: quote?.trailingPE, marketCap: quote?.marketCap },
         valuation, momentum, risk, sentiment, confidence
       });
     }
-
-    sectorScores[sector] = perTickerScores.length ? Math.round(perTickerScores.reduce((a,b) => a+b,0)/perTickerScores.length) : 50;
+    sectorScores[assetClass] = perTickerScores.length
+      ? Math.round(perTickerScores.reduce((a, b) => a + b, 0) / perTickerScores.length)
+      : 50;
   }
+}
+
 
   // 4) Create simple sector signal (-1..1) by mapping sectorScores to delta
   const sectorSignals = {};
