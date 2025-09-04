@@ -1,6 +1,7 @@
 // routes/advisor.js
 import express from "express";
 import { generateRecommendation } from "../services/advisorService.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ router.get("/ping", (req, res) => {
 
 // POST /api/advisor
 // body: { age, income, riskTolerance, investmentHorizon?, preferences? }
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, async (req, res) => {
   try {
     const { age, income, riskTolerance, investmentHorizon, preferences } = req.body || {};
 
@@ -31,7 +32,8 @@ router.post("/", async (req, res) => {
       preferences: preferences || [], // default to empty list
     };
 
-    const result = await generateRecommendation(profile);
+    // ✅ Pass userId so history is saved inside the service
+    const result = await generateRecommendation(profile, req.user._id);
 
     // Ensure explanation always exists
     const safeResult = {

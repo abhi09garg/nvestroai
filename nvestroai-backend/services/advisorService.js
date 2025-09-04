@@ -3,6 +3,8 @@ import axios from "axios";
 import NodeCache from "node-cache";
 import yahooFinance from "yahoo-finance2";
 import OpenAI from "openai";
+import Recommendation from "../models/Recommendation.js";
+
 
 const cacheTTL = Number(process.env.CACHE_TTL_SEC || 300);
 const cache = new NodeCache({ stdTTL: cacheTTL, checkperiod: 60 });
@@ -227,7 +229,7 @@ function applySectorTilts(baseAlloc, sectorSignals) {
   Top-level orchestrator
 -------------------------*/
 
-export async function generateRecommendation(profile) {
+export async function generateRecommendation(profile, userId = null) {
   // profile: { age, income, riskTolerance, investmentHorizon, preferences }
   // 1) Base allocation
   const base = baseAllocationFromProfile(profile);
@@ -368,7 +370,7 @@ Base allocation: ${JSON.stringify(base)}
 Final allocation: ${JSON.stringify(finalAllocation)}
 Sector scores (0..100): ${JSON.stringify(sectorScores)}
 
-Explain (2-4 sentences) why the final allocation differs from the base, referencing market and news signals in plain language. Do NOT recommend individual stocks.
+Explain (2-4 sentences) why the final allocation differs from the base, referencing market and news signals in plain language. Do NOT recommend individual stocks, recommend current sectors fruitful for investment.
 Return plain text only.
     `;
     try {
@@ -382,6 +384,35 @@ Return plain text only.
       console.warn("OpenAI explain error:", err.message);
     }
   }
+
+    const result = {
+    profile,
+    baseAllocation: base,
+    finalAllocation,
+    sectorScores,
+    sectorDetails,
+    overallConfidence,
+    advice: adviceFromConfidence(overallConfidence),
+    explanation
+  };
+
+  // ✅ Save to DB if userId exists
+  if (userId) {
+    try {
+      const rec = new Recommendation({
+        userId,
+        profile,
+        result,
+        createdAt: new Date()
+      });
+      await rec.save();
+    } catch (err) {
+      console.error("Failed to save recommendation:", err.message);
+    }
+  }
+
+  return result;
+
 
   // 8) Return structured result
   return {
